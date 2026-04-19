@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DRT Web App</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 0; background: #0f172a; color: #e5e7eb; }
+    .wrap { max-width: 1500px; margin: 0 auto; padding: 20px; }
+    .grid { display: grid; grid-template-columns: 360px 1fr; gap: 18px; align-items: start; }
+    .card { background: #111827; border: 1px solid #334155; border-radius: 14px; padding: 16px; margin-bottom: 16px; }
+    h1, h2, h3 { margin-top: 0; }
+    input, select, button { width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid #475569; background: #0b1220; color: #e5e7eb; margin-top: 6px; margin-bottom: 10px; box-sizing: border-box; }
+    button { cursor: pointer; background: #1d4ed8; border: none; }
+    button.secondary { background: #374151; }
+    button.danger { background: #b91c1c; }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .muted { color: #94a3b8; font-size: 14px; }
+    .msg { background: #052e16; border: 1px solid #166534; padding: 12px; border-radius: 10px; margin-bottom: 16px; }
+    .err { background: #3f1111; border: 1px solid #7f1d1d; padding: 12px; border-radius: 10px; margin-bottom: 8px; }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    th, td { border-bottom: 1px solid #334155; text-align: left; padding: 8px; }
+    .dataset-list { max-height: 260px; overflow: auto; font-size: 14px; }
+    img { width: 100%; border-radius: 12px; background: white; }
+    @media (max-width: 1024px) { .grid { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <h1>DRT Web App</h1>
+  <p class="muted">Add files iteratively. You can keep feeding datasets one at a time or in batches, then run one comparison across all loaded plots.</p>
+
+  {% if message %}<div class="msg">{{ message }}</div>{% endif %}
+  {% if errors %}
+    {% for error in errors %}<div class="err">{{ error }}</div>{% endfor %}
+  {% endif %}
+
+  <div class="grid">
+    <div>
+      <div class="card">
+        <h2>1. Add datasets</h2>
+        <form action="/add-dataset" method="post" enctype="multipart/form-data">
+          <label>Select CSV or TXT files</label>
+          <input type="file" name="files" multiple accept=".csv,.txt">
+          <button type="submit">Add to comparison queue</button>
+        </form>
+        <p class="muted">Expected columns: frequency, Zreal, -Zimag. You can repeat this step until your incoming stream stops.</p>
+      </div>
+
+      <div class="card">
+        <h2>2. Analysis settings</h2>
+        <form action="/analyze" method="post">
+          <label>Discretization</label>
+          <select name="basis">
+            {% for v in ['Gaussian','C2 Matern','C4 Matern','C6 Matern','Inverse Quadratic','Inverse Multiquadric','Cauchy'] %}
+            <option value="{{v}}" {% if params.get('basis') == v %}selected{% endif %}>{{v}}</option>
+            {% endfor %}
+          </select>
+
+          <label>Data Use</label>
+          <select name="data_mode">
+            {% for v in ['Combined Re-Im Data','Re Data','Im Data'] %}
+            <option value="{{v}}" {% if params.get('data_mode') == v %}selected{% endif %}>{{v}}</option>
+            {% endfor %}
+          </select>
+
+          <label>Inductance</label>
+          <select name="inductance_mode">
+            {% for v in ['Fitting with Inductance','Fitting w/o Inductance','Discard Inductive Data'] %}
+            <option value="{{v}}" {% if params.get('inductance_mode') == v %}selected{% endif %}>{{v}}</option>
+            {% endfor %}
+          </select>
+
+          <div class="row">
+            <div>
+              <label>Derivative Order</label>
+              <select name="derivative_order">
+                <option value="1" {% if params.get('derivative_order') == 1 %}selected{% endif %}>1st order</option>
+                <option value="2" {% if params.get('derivative_order', 2) == 2 %}selected{% endif %}>2nd order</option>
+              </select>
+            </div>
+            <div>
+              <label>Lambda Mode</label>
+              <select name="lambda_mode">
+                {% for v in ['Custom','Auto (GCV-style)'] %}
+                <option value="{{v}}" {% if params.get('lambda_mode') == v %}selected{% endif %}>{{v}}</option>
+                {% endfor %}
+              </select>
+            </div>
+          </div>
+
+          <div class="row">
+            <div>
+              <label>Lambda</label>
+              <input name="lambda_value" value="{{ params.get('lambda_value', '0.001') }}">
+            </div>
+            <div>
+              <label>Shape Factor</label>
+              <input name="shape_factor" value="{{ params.get('shape_factor', '0.5') }}">
+            </div>
+          </div>
+
+          <label>Tau Grid Points</label>
+          <input name="n_tau" value="{{ params.get('n_tau', '120') }}">
+          <button type="submit">Analyze all loaded datasets</button>
+        </form>
+      </div>
+
+      <div class="card">
+        <h2>3. Desktop app</h2>
+        <form action="/open-desktop" method="post">
+          <button class="secondary" type="submit">Open desktop app</button>
+        </form>
+        <p class="muted">This launches the Tk desktop version on the same machine running Flask.</p>
+      </div>
+
+      <div class="card">
+        <h2>4. Queue</h2>
+        <div class="dataset-list">
+          {% if datasets %}
+            <table>
+              <thead><tr><th>Name</th><th>Points</th></tr></thead>
+              <tbody>
+              {% for d in datasets %}
+              <tr><td>{{ d.name }}</td><td>{{ d.freq|length }}</td></tr>
+              {% endfor %}
+              </tbody>
+            </table>
+          {% else %}
+            <p class="muted">No datasets loaded yet.</p>
+          {% endif %}
+        </div>
+        <form action="/clear" method="post">
+          <button class="danger" type="submit">Clear queue</button>
+        </form>
+      </div>
+    </div>
+
+    <div>
+      <div class="card">
+        <h2>Comparison output</h2>
+        {% if charts %}
+          <h3>Nyquist small multiples</h3>
+          <img src="data:image/png;base64,{{ charts.overview }}" alt="Nyquist comparison">
+          <h3 style="margin-top:18px;">DRT overlay</h3>
+          <img src="data:image/png;base64,{{ charts.gamma_overlay }}" alt="DRT overlay">
+        {% else %}
+          <p class="muted">After you load datasets, click “Analyze all loaded datasets” to generate comparison plots.</p>
+        {% endif %}
+      </div>
+
+      {% if results %}
+      <div class="card">
+        <h2>Results table</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Name</th><th>Points</th><th>Lambda</th><th>Rinf</th><th>Inductance</th><th>Residual</th><th>Pol. Resistance</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in results %}
+            <tr>
+              <td>{{ row.name }}</td>
+              <td>{{ row.points }}</td>
+              <td>{{ row.lambda_value }}</td>
+              <td>{{ row.rinf }}</td>
+              <td>{{ row.inductance }}</td>
+              <td>{{ row.residual_norm }}</td>
+              <td>{{ row.polarization_resistance }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+</body>
+</html>
